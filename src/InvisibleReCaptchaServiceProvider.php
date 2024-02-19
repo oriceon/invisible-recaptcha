@@ -15,6 +15,7 @@ class InvisibleReCaptchaServiceProvider extends ServiceProvider
     public function boot()
     {
         $this->bootConfig();
+
         $this->app['validator']->extend('captcha', function ($attribute, $value) {
             return $this->app['captcha']->verifyResponse($value, $this->app['request']->getClientIp());
         });
@@ -75,12 +76,15 @@ class InvisibleReCaptchaServiceProvider extends ServiceProvider
         $blade->directive('captcha', function ($arguments) {
             return "<?php echo app('captcha')->renderCaptcha({$arguments}); ?>";
         });
+
         $blade->directive('captchaPolyfill', function () {
             return "<?php echo app('captcha')->renderPolyfill(); ?>";
         });
+
         $blade->directive('captchaHTML', function () {
             return "<?php echo app('captcha')->renderCaptchaHTML(); ?>";
         });
+        
         $blade->directive('captchaScripts', function ($arguments) {
             return "<?php echo app('captcha')->renderFooterJS({$arguments}); ?>";
         });

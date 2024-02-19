@@ -11,13 +11,14 @@ use AlbertCht\InvisibleReCaptcha\InvisibleReCaptcha;
 
 class CaptchaTest extends TestCase
 {
-    const SITE_KEY = 'site_key';
+    const SITE_KEY   = 'site_key';
     const SECRET_KEY = 'secret_key';
-    const OPTIONS = [
+    const OPTIONS    = [
         'hideBadge' => false,
         'dataBadge' => 'bottomright',
-        'timeout' => 5,
-        'debug' => false
+        'timeout'   => 5,
+        'debug'     => false,
+        'enabled'   => true
     ];
 
     protected $captcha;
