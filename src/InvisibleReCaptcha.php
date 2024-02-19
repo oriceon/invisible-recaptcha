@@ -1,6 +1,6 @@
 <?php
 
-namespace AlbertCht\InvisibleReCaptcha;
+namespace OriceOn\InvisibleReCaptcha;
 
 use Illuminate\Support\Arr;
 use Symfony\Component\HttpFoundation\Request;
@@ -52,9 +52,11 @@ class InvisibleReCaptcha
      */
     public function __construct($siteKey, $secretKey, $options = [])
     {
-        $this->siteKey = $siteKey;
+        $this->siteKey   = $siteKey;
         $this->secretKey = $secretKey;
+
         $this->setOptions($options);
+        
         $this->setClient(
             new Client([
                 'timeout' => $this->getOption('timeout', 5)

@@ -1,6 +1,6 @@
 <?php
 
-namespace AlbertCht\InvisibleReCaptcha;
+namespace OriceOn\InvisibleReCaptcha;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\View\Compilers\BladeCompiler;
@@ -48,7 +48,7 @@ class InvisibleReCaptchaServiceProvider extends ServiceProvider
      */
     protected function bootConfig()
     {
-        $path = __DIR__.'/config/captcha.php';
+        $path = __DIR__ . '/config/captcha.php';
 
         $this->mergeConfigFrom($path, 'captcha');
 
