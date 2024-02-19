@@ -20,7 +20,7 @@
         {
             "name": "Valentin Ivașcu",
             "homepage": "https://www.valentinivascu.ro"
-        },
+        }
     ],
     "require": {
         "php": "^8.2",
