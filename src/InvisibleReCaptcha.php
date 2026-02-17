@@ -272,7 +272,7 @@ class InvisibleReCaptcha
     public function verifyRequest(Request $request)
     {
         return $this->verifyResponse(
-            $request->get('g-recaptcha-response'),
+            $request->request->get('g-recaptcha-response'),
             $request->getClientIp()
         );
     }
