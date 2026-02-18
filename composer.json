@@ -8,7 +8,6 @@
         "invisible",
         "invisible-recaptcha",
         "laravel",
-        "laravel5",
         "php"
     ],
     "license": "MIT",
@@ -26,21 +25,32 @@
         "php": "^8.2",
         "illuminate/support": "^10.0|^11.0|^12.0",
         "illuminate/view": "^10.0|^11.0|^12.0",
-        "guzzlehttp/guzzle": "^7.0"
+        "guzzlehttp/guzzle": "^7.9"
     },
     "require-dev": {
-        "phpunit/phpunit": "^9.3|^11.0"
+        "pestphp/pest": "^3.0",
+        "pestphp/pest-plugin-arch": "^3.0"
     },
     "autoload": {
         "psr-4": {
-            "OriceOn\\InvisibleReCaptcha\\": "src/"
+            "Oriceon\\InvisibleReCaptcha\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "OriceOn\\InvisibleReCaptcha\\InvisibleReCaptchaServiceProvider"
+                "Oriceon\\InvisibleReCaptcha\\InvisibleReCaptchaServiceProvider"
             ]
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
         }
     }
 }

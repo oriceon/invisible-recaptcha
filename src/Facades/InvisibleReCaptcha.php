@@ -1,6 +1,6 @@
 <?php
 
-namespace OriceOn\InvisibleReCaptcha\Facades;
+namespace Oriceon\InvisibleReCaptcha\Facades;
 
 use Illuminate\Support\Facades\Facade;
 

@@ -1,6 +1,6 @@
 <?php
 
-namespace OriceOn\InvisibleReCaptcha;
+namespace Oriceon\InvisibleReCaptcha;
 
 use Illuminate\Support\Arr;
 use Symfony\Component\HttpFoundation\Request;
