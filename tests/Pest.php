@@ -8,14 +8,15 @@ use Oriceon\InvisibleReCaptcha\InvisibleReCaptcha;
 
 // ─── Shared constants ─────────────────────────────────────────────────────────
 
-const SITE_KEY   = 'test_site_key';
-const SECRET_KEY = 'test_secret_key';
+const SITE_KEY    = 'test_site_key';
+const SECRET_KEY  = 'test_secret_key';
 const RAW_OPTIONS = [
-    'enabled'   => true,
-    'hideBadge' => false,
-    'dataBadge' => 'bottomright',
-    'timeout'   => 5,
-    'debug'     => false,
+    'enabled'        => true,
+    'hideBadge'      => false,
+    'debug'          => false,
+    'timeout'        => 5,
+    'scoreThreshold' => 0.5,
+    'action'         => 'submit',
 ];
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -25,6 +26,10 @@ function makeCaptcha(array $overrides = []): InvisibleReCaptcha
     return new InvisibleReCaptcha(SITE_KEY, SECRET_KEY, array_merge(RAW_OPTIONS, $overrides));
 }
 
+/**
+ * Build a Guzzle mock that returns a reCAPTCHA v3 verify response.
+ * $body should include 'success', 'score', and 'action' for v3.
+ */
 function makeGuzzleMock(array $body): Client
 {
     $mock    = new MockHandler([new Response(200, [], json_encode($body))]);

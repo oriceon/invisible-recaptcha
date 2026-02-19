@@ -6,9 +6,9 @@
 [![Laravel](https://img.shields.io/badge/laravel-%5E12.0-FF2D20.svg)](https://laravel.com)
 [![License](https://img.shields.io/packagist/l/oriceon/invisible-recaptcha.svg)](LICENSE.md)
 
-Google Invisible reCAPTCHA v2 integration for **Laravel 12** built with **PHP 8.5**.
+Google **reCAPTCHA v3** integration for **Laravel 12** built with **PHP 8.5**.
 
-> **Invisible reCAPTCHA** works silently in the background — no "I'm not a robot" checkbox needed. Only a small badge appears at the bottom of the page to indicate protection.
+> **reCAPTCHA v3** works entirely in the background — no checkbox, no challenge, no user interaction required. It returns a **score from 0.0 (bot) to 1.0 (human)** and an **action name** that you verify server-side. Only the small `.grecaptcha-badge` appears on the page.
 
 ---
 
@@ -42,9 +42,9 @@ php artisan vendor:publish --provider="Oriceon\InvisibleReCaptcha\InvisibleReCap
 
 This publishes `config/captcha.php` to your application.
 
-### 2. Add keys to `.env`
+### 2. Register keys on Google
 
-Go to [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin) and create an **Invisible reCAPTCHA v2** key pair, then add them to your `.env`:
+Go to [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin) and create a **reCAPTCHA v3** key pair. Then add them to your `.env`:
 
 ```env
 # Required
@@ -53,7 +53,8 @@ INVISIBLE_RECAPTCHA_SECRETKEY=your_secret_key_here
 
 # Optional (defaults shown)
 INVISIBLE_RECAPTCHA_BADGEHIDE=false
-INVISIBLE_RECAPTCHA_DATABADGE=bottomright
+INVISIBLE_RECAPTCHA_SCORE=0.5
+INVISIBLE_RECAPTCHA_ACTION=submit
 INVISIBLE_RECAPTCHA_TIMEOUT=5
 INVISIBLE_RECAPTCHA_DEBUG=false
 INVISIBLE_RECAPTCHA_ENABLED=true
@@ -67,23 +68,41 @@ return [
     'secretKey' => env('INVISIBLE_RECAPTCHA_SECRETKEY'),
 
     'options' => [
-        // Hide the reCAPTCHA badge (not recommended by Google)
+        // Hide the reCAPTCHA badge (.grecaptcha-badge) using visibility:hidden.
+        // Per Google ToS, if hidden you must show "Protected by reCAPTCHA" text elsewhere.
         'hideBadge' => env('INVISIBLE_RECAPTCHA_BADGEHIDE', false),
 
-        // Badge position: 'bottomright' | 'bottomleft' | 'inline'
-        'dataBadge' => env('INVISIBLE_RECAPTCHA_DATABADGE', 'bottomright'),
+        // Minimum score to accept (0.0 = bot, 1.0 = human).
+        // Google recommends starting at 0.5 and tuning based on your traffic.
+        'scoreThreshold' => env('INVISIBLE_RECAPTCHA_SCORE', 0.5),
 
-        // Guzzle HTTP timeout in seconds
-        'timeout'   => env('INVISIBLE_RECAPTCHA_TIMEOUT', 5),
+        // Action name passed to grecaptcha.execute(key, {action}).
+        // Verified server-side to prevent token re-use across different forms.
+        // Use distinct values per form: 'submit', 'login', 'signup', 'contact', etc.
+        'action' => env('INVISIBLE_RECAPTCHA_ACTION', 'submit'),
 
-        // Show binding debug info in the browser console
-        'debug'     => env('INVISIBLE_RECAPTCHA_DEBUG', false),
+        // Guzzle HTTP timeout in seconds for the verify API call
+        'timeout' => env('INVISIBLE_RECAPTCHA_TIMEOUT', 5),
 
-        // Set false to bypass captcha entirely (useful in testing)
-        'enabled'   => env('INVISIBLE_RECAPTCHA_ENABLED', true),
+        // Log reCAPTCHA binding status to the browser console
+        'debug' => env('INVISIBLE_RECAPTCHA_DEBUG', false),
+
+        // Set false to bypass captcha completely (useful in automated tests)
+        'enabled' => env('INVISIBLE_RECAPTCHA_ENABLED', true),
     ],
 ];
 ```
+
+---
+
+## How reCAPTCHA v3 Works
+
+1. The page loads `api.js?render=SITE_KEY` (async defer).
+2. On form submit, JavaScript calls `grecaptcha.execute(siteKey, {action})` which returns a **token** as a Promise.
+3. The token is injected into a hidden `<input name="g-recaptcha-response">` and the form is submitted.
+4. Your server sends the token to Google's verify API.
+5. Google responds with `success`, `score` (0.0–1.0), and `action`.
+6. You accept or reject the submission based on the score and action.
 
 ---
 
@@ -93,13 +112,13 @@ return [
 
 - The captcha **must be inside a `<form>` element**.
 - The form must have **exactly one** `<button type="submit">` or `<input type="submit">`.
-- The submit button **must** have `type="submit"`.
+- Each form should use a **unique action name** (e.g. `'login'`, `'contact'`, `'signup'`) to prevent token re-use.
 
 ---
 
 ### All-in-one render (recommended)
 
-Renders the polyfill script, the reCAPTCHA HTML, and the footer JS in one call.
+Renders the polyfill script, the hidden input, and the footer JS in a single call.
 
 ```blade
 <form method="POST" action="/contact">
@@ -113,7 +132,7 @@ Renders the polyfill script, the reCAPTCHA HTML, and the footer JS in one call.
 </form>
 ```
 
-Or with a language and a CSP nonce:
+With a language and a CSP nonce:
 
 ```blade
 @captcha('ro', 'your-csp-nonce')
@@ -143,7 +162,7 @@ When using a JS framework that does not allow `<script>` tags inside component t
 {!! app('captcha')->renderPolyfill() !!}
 ```
 
-#### HTML widget — place inside `<form>`
+#### Hidden input — place inside `<form>`
 
 ```blade
 @captchaHTML
@@ -202,9 +221,24 @@ When using a JS framework that does not allow `<script>` tags inside component t
 
 ---
 
+### Per-form action names
+
+Use a distinct `action` name for each form to allow score analysis per form type and prevent token re-use:
+
+```php
+// In a controller or middleware, override the action before rendering:
+app('captcha')->setOption('action', 'login');
+
+// Or boot a separate instance for each action:
+$loginCaptcha  = new InvisibleReCaptcha($siteKey, $secretKey, ['action' => 'login']);
+$signupCaptcha = new InvisibleReCaptcha($siteKey, $secretKey, ['action' => 'signup']);
+```
+
+---
+
 ### Validation
 
-Add the `captcha` rule to your validation array. The rule automatically verifies the `g-recaptcha-response` token against Google's API.
+Add the `captcha` rule to your validation array. The rule automatically verifies the `g-recaptcha-response` token, checking Google's `success`, `score >= threshold`, and `action` match.
 
 ```php
 // In a FormRequest:
@@ -258,6 +292,23 @@ class ContactController extends Controller
 }
 ```
 
+`verifyResponse()` returns `true` only when all three conditions pass:
+- `success === true`
+- `score >= scoreThreshold` (default `0.5`)
+- `action === configured action` (prevents token re-use across forms)
+
+---
+
+### Adjusting the score threshold
+
+```php
+// Accept only highly confident humans (strict)
+app('captcha')->setOption('scoreThreshold', 0.7);
+
+// Be more lenient (permissive)
+app('captcha')->setOption('scoreThreshold', 0.3);
+```
+
 ---
 
 ### Custom JS hooks
@@ -283,34 +334,33 @@ function _submitEvent() {
 
 This package is built exclusively with PHP 8.5 features.
 
-### `Enums/BadgePosition`
-
-```php
-enum BadgePosition: string
-{
-    case BottomRight = 'bottomright';
-    case BottomLeft  = 'bottomleft';
-    case Inline      = 'inline';
-}
-```
-
 ### `Data/CaptchaOptions` — `readonly class` + `clone with`
+
+An immutable value-object that holds all configuration. Mutation returns a new instance via PHP 8.5 `clone with`:
 
 ```php
 readonly class CaptchaOptions
 {
     public function __construct(
-        public bool          $enabled   = true,
-        public bool          $hideBadge = false,
-        public bool          $debug     = false,
-        public int           $timeout   = 5,
-        public BadgePosition $badge     = BadgePosition::BottomRight,
+        public bool   $enabled        = true,
+        public bool   $hideBadge      = false,
+        public bool   $debug          = false,
+        public int    $timeout        = 5,
+        public float  $scoreThreshold = 0.5,
+        public string $action         = 'submit',
     ) {}
 
+    public static function fromArray(array $options): self { ... }
+
     // PHP 8.5 — clone with
-    public function withBadge(BadgePosition $badge): self
+    public function withScoreThreshold(float $scoreThreshold): self
     {
-        return clone($this, badge: $badge);
+        return clone($this, scoreThreshold: $scoreThreshold);
+    }
+
+    public function withAction(string $action): self
+    {
+        return clone($this, action: $action);
     }
 }
 ```
@@ -319,6 +369,14 @@ readonly class CaptchaOptions
 
 ```php
 // PHP 8.5 — pipe operator |>
+// getCaptchaJs: appends ?render=SITE_KEY (required for v3)
+public function getCaptchaJs(?string $lang = null): ?string
+{
+    return static::API_URI . '?render=' . $this->siteKey
+        |> fn(string $url) => $lang ? $url . '&hl=' . $lang : $url;
+}
+
+// render: combines polyfill + hidden input + footer JS
 public function render(?string $lang = null, ?string $nonce = null): ?string
 {
     return [$this->renderPolyfill(), $this->renderCaptchaHTML(), $this->renderFooterJS($lang, $nonce)]
@@ -326,20 +384,28 @@ public function render(?string $lang = null, ?string $nonce = null): ?string
         |> fn(array $parts) => implode('', $parts);
 }
 
-// PHP 8.5 — #[\NoDiscard] prevents silent ignore of return value
-#[\NoDiscard('Always check the captcha verification result')]
-public function verifyResponse(string $response, string $clientIp): bool { ... }
+// verifyResponse: checks success + score + action via pipe operator
+#[\NoDiscard('Always check the v3 captcha result — score and action must both pass')]
+public function verifyResponse(string $response, string $clientIp): bool
+{
+    return ['secret' => $this->secretKey, 'remoteip' => $clientIp, 'response' => $response]
+        |> fn(array $params) => $this->sendVerifyRequest($params)
+        |> fn(array $result)  => $result['success'] === true
+            && ($result['score']  ?? 0.0) >= $this->options->scoreThreshold
+            && ($result['action'] ?? '')   === $this->options->action;
+}
 ```
+
+### PHP 8.5 Features Used
 
 | PHP 8.5 Feature | Used in |
 |---|---|
-| Pipe operator `\|>` | `render()`, `renderDebug()`, `verifyResponse()` |
+| Pipe operator `\|>` | `getCaptchaJs()`, `render()`, `renderDebug()`, `verifyResponse()` |
 | `readonly class` | `CaptchaOptions` |
 | `clone($this, prop: val)` | `CaptchaOptions::with*()` |
 | `#[\NoDiscard]` / `#[\NoDiscard('msg')]` | All render & verify methods |
 | `array_first()` / `array_last()` | `renderCaptchaHTML()` |
-| `enum` (backed) | `BadgePosition` |
-| Typed class constants `const string` | `InvisibleReCaptcha` |
+| Typed class constants `const string` / `const array` | `InvisibleReCaptcha` |
 | Constructor property promotion + `readonly` | `InvisibleReCaptcha` |
 | Named arguments | `verifyRequest()`, `sendVerifyRequest()` |
 | `match` expression | `setOption()`, `getOption()` |
@@ -359,8 +425,8 @@ Test suites:
 
 | File | Coverage |
 |---|---|
-| `tests/Unit/CaptchaOptionsTest.php` | `BadgePosition` enum, `CaptchaOptions::fromArray()`, all `with*` clone-with methods |
-| `tests/Unit/InvisibleReCaptchaTest.php` | Constructor, options, all render methods, verify methods (with Guzzle mock) |
+| `tests/Unit/CaptchaOptionsTest.php` | `CaptchaOptions::fromArray()`, defaults, casting, all `with*` clone-with methods, chaining |
+| `tests/Unit/InvisibleReCaptchaTest.php` | Constructor, options, `getCaptchaJs` (v3 `?render=` URL), render methods, footer JS (ready/execute), verify (score boundary, action mismatch, success=false) |
 | `tests/Unit/BladeDirectiveTest.php` | All 4 Blade directives: `@captcha`, `@captchaPolyfill`, `@captchaHTML`, `@captchaScripts` |
 
 ---
@@ -384,10 +450,11 @@ Test suites:
 
 | Variable | Default | Description |
 |---|---|---|
-| `INVISIBLE_RECAPTCHA_SITEKEY` | — | Google reCAPTCHA site key (**required**) |
-| `INVISIBLE_RECAPTCHA_SECRETKEY` | — | Google reCAPTCHA secret key (**required**) |
-| `INVISIBLE_RECAPTCHA_BADGEHIDE` | `false` | Hide the reCAPTCHA badge (not recommended) |
-| `INVISIBLE_RECAPTCHA_DATABADGE` | `bottomright` | Badge position: `bottomright` \| `bottomleft` \| `inline` |
+| `INVISIBLE_RECAPTCHA_SITEKEY` | — | Google reCAPTCHA v3 site key (**required**) |
+| `INVISIBLE_RECAPTCHA_SECRETKEY` | — | Google reCAPTCHA v3 secret key (**required**) |
+| `INVISIBLE_RECAPTCHA_BADGEHIDE` | `false` | Hide the `.grecaptcha-badge` via `visibility:hidden` |
+| `INVISIBLE_RECAPTCHA_SCORE` | `0.5` | Minimum score to accept (0.0 = bot, 1.0 = human) |
+| `INVISIBLE_RECAPTCHA_ACTION` | `submit` | Action name for token scoping (e.g. `login`, `signup`) |
 | `INVISIBLE_RECAPTCHA_TIMEOUT` | `5` | Guzzle HTTP timeout in seconds |
 | `INVISIBLE_RECAPTCHA_DEBUG` | `false` | Log element binding status to browser console |
 | `INVISIBLE_RECAPTCHA_ENABLED` | `true` | Set `false` to disable captcha (useful in tests) |
@@ -402,20 +469,6 @@ Set `INVISIBLE_RECAPTCHA_ENABLED=false` in your `.env.testing` to skip verificat
 # .env.testing
 INVISIBLE_RECAPTCHA_ENABLED=false
 ```
-
----
-
-## Changelog
-
-### v3.0.0
-- **PHP 8.5 minimum** — pipe operator `|>`, `#[\NoDiscard]`, `array_first()` / `array_last()`, `clone with`
-- **Laravel 12 only** — dropped support for Laravel 10 and 11
-- New `BadgePosition` backed enum replaces raw strings
-- New `CaptchaOptions` immutable `readonly` value-object with `clone with` wither methods
-- Replaced PHPUnit with **Pest v3** + `pest-plugin-arch`
-- `getOptions()` now returns a `CaptchaOptions` instance instead of a raw array
-- All public render/verify methods annotated with `#[\NoDiscard]`
-- Namespace corrected to `Oriceon\InvisibleReCaptcha`
 
 ---
 

@@ -4,18 +4,26 @@ namespace Oriceon\InvisibleReCaptcha;
 
 use GuzzleHttp\Client;
 use Oriceon\InvisibleReCaptcha\Data\CaptchaOptions;
-use Oriceon\InvisibleReCaptcha\Enums\BadgePosition;
 use Symfony\Component\HttpFoundation\Request;
 
+/**
+ * Google reCAPTCHA v3 integration for Laravel 12.
+ *
+ * v3 differences from v2:
+ *  - Script URL includes ?render=SITE_KEY
+ *  - No widget div — only a hidden <input> in the form
+ *  - JS uses grecaptcha.ready() + grecaptcha.execute(key, {action}) → Promise<token>
+ *  - Verify response contains score (0.0–1.0) and action — both are validated
+ *  - Badge is .grecaptcha-badge (visibility:hidden to hide, per Google ToS)
+ */
 class InvisibleReCaptcha
 {
-    // PHP 8.3+ typed class constants (available in 8.5)
+    // PHP 8.3+ typed class constants
     const string API_URI      = 'https://www.google.com/recaptcha/api.js';
     const string VERIFY_URI   = 'https://www.google.com/recaptcha/api/siteverify';
     const string POLYFILL_URI = 'https://cdnjs.cloudflare.com/polyfill/v3/polyfill.js';
-    const array  DEBUG_ELEMENTS = ['_submitForm', '_captchaForm', '_captchaSubmit'];
+    const array  DEBUG_ELEMENTS = ['grecaptcha', '_form', '_captchaSubmit'];
 
-    // PHP 8.1 readonly + constructor property promotion for keys
     private CaptchaOptions $options;
     private Client         $client;
 
@@ -30,7 +38,10 @@ class InvisibleReCaptcha
 
     // ─── JS URLs ──────────────────────────────────────────────────────────────
 
-    // PHP 8.5 — #[\NoDiscard]: return value must not be silently ignored
+    /**
+     * reCAPTCHA v3 — script URL must include ?render=SITE_KEY.
+     * Optional &hl=lang for localisation.
+     */
     #[\NoDiscard]
     public function getCaptchaJs(?string $lang = null): ?string
     {
@@ -38,7 +49,9 @@ class InvisibleReCaptcha
             return null;
         }
 
-        return $lang ? static::API_URI . '?hl=' . $lang : static::API_URI;
+        // PHP 8.5 — pipe operator |>
+        return static::API_URI . '?render=' . $this->siteKey
+            |> fn(string $url) => $lang ? $url . '&hl=' . $lang : $url;
     }
 
     #[\NoDiscard]
@@ -76,6 +89,10 @@ class InvisibleReCaptcha
             : null;
     }
 
+    /**
+     * reCAPTCHA v3 — no widget div, just a hidden input to receive the token.
+     * The JS will inject the token here before submitting the form.
+     */
     #[\NoDiscard]
     public function renderCaptchaHTML(): ?string
     {
@@ -83,26 +100,29 @@ class InvisibleReCaptcha
             return null;
         }
 
-        $parts = ['<div id="_g-recaptcha"></div>' . PHP_EOL];
+        $parts = [
+            '<input type="hidden" name="g-recaptcha-response" id="g-recaptcha-response">' . PHP_EOL,
+        ];
 
+        // v3 badge is .grecaptcha-badge — use visibility:hidden (not display:none)
+        // so Google can still render it; this is acceptable per ToS when
+        // reCAPTCHA branding is shown elsewhere (e.g. in a disclaimer).
         if ($this->options->hideBadge) {
-            $parts[] = '<style>.grecaptcha-badge{display:none !important;}</style>' . PHP_EOL;
+            $parts[] = '<style>.grecaptcha-badge { visibility: hidden; }</style>' . PHP_EOL;
         }
 
-        $parts[] = '<div class="g-recaptcha"'
-            . ' data-sitekey="' . $this->siteKey . '"'
-            . ' data-size="invisible"'
-            . ' data-callback="_submitForm"'
-            . ' data-badge="' . $this->options->badge->value . '"></div>';
-
         // PHP 8.5 — array_first() / array_last()
-        // (used here to verify the first and last HTML part are as expected at runtime)
-        assert(str_contains((string) array_first($parts), '_g-recaptcha'));
-        assert(str_contains((string) array_last($parts), 'g-recaptcha'));
+        assert(str_contains((string) array_first($parts), 'g-recaptcha-response'));
+        assert(str_contains((string) array_last($parts), 'grecaptcha') || count($parts) === 1);
 
         return implode('', $parts);
     }
 
+    /**
+     * reCAPTCHA v3 footer JS:
+     *  1. Loads api.js?render=SITE_KEY (async defer)
+     *  2. On form submit: grecaptcha.ready() → execute(key, {action}) → inject token → submit
+     */
     #[\NoDiscard]
     public function renderFooterJS(?string $lang = null, ?string $nonce = null): ?string
     {
@@ -110,30 +130,38 @@ class InvisibleReCaptcha
             return null;
         }
 
-        $nonceAttr = $nonce ? ' nonce="' . $nonce . '"' : '';
+        $nonceAttr = $nonce ? ' nonce="' . htmlspecialchars($nonce, ENT_QUOTES) . '"' : '';
 
-        $hideBadgeJs = $this->options->hideBadge
-            ? "_captchaBadge=document.querySelector('.grecaptcha-badge');"
-                . "if(_captchaBadge){_captchaBadge.style='display:none !important;';}"
-            : '';
-
-        // PHP 8.5 — pipe operator for building debug JS
+        // PHP 8.5 — pipe operator to build debug JS
         $debugJs = $this->options->debug ? $this->renderDebug() : '';
 
+        $siteKey = $this->siteKey;
+        $action  = $this->options->action;
+
         return implode('', [
+            // 1. Load reCAPTCHA v3 script with site key
             '<script src="' . $this->getCaptchaJs($lang) . '" async defer' . $nonceAttr . '></script>' . PHP_EOL,
-            '<script>var _submitForm,_captchaForm,_captchaSubmit,_execute=true,_captchaBadge;</script>',
-            "<script>window.addEventListener('load', _loadCaptcha);" . PHP_EOL,
-            'function _loadCaptcha(){',
-            $hideBadgeJs,
-            '_captchaForm=document.querySelector("#_g-recaptcha").closest("form");',
-            "_captchaSubmit=_captchaForm.querySelector('[type=submit]');",
-            '_submitForm=function(){if(typeof _submitEvent==="function"){_submitEvent();grecaptcha.reset();}else{_captchaForm.submit();}};',
-            "_captchaForm.addEventListener('submit',function(e){e.preventDefault();"
-                . "if(typeof _beforeSubmit==='function'){_execute=_beforeSubmit(e);}"
-                . 'if(_execute){grecaptcha.execute();}});',
+            // 2. Inline event listener
+            '<script' . $nonceAttr . '>',
+            "window.addEventListener('load',function(){",
+            "var _form=document.querySelector('#g-recaptcha-response').closest('form');",
+            "var _captchaSubmit=_form.querySelector('[type=submit]');",
+            'var _execute=true;',
+            "_form.addEventListener('submit',function(e){",
+            'e.preventDefault();',
+            "if(typeof _beforeSubmit==='function'){_execute=_beforeSubmit(e);}",
+            'if(_execute){',
+            'grecaptcha.ready(function(){',
+            "grecaptcha.execute('{$siteKey}',{action:'{$action}'}).then(function(token){",
+            "document.getElementById('g-recaptcha-response').value=token;",
+            "if(typeof _submitEvent==='function'){_submitEvent();}else{_form.submit();}",
+            '});',  // end .then
+            '});',  // end grecaptcha.ready
+            '}',    // end if(_execute)
+            '});',  // end submit listener
             $debugJs,
-            "}</script>" . PHP_EOL,
+            '});',  // end load listener
+            '</script>' . PHP_EOL,
         ]);
     }
 
@@ -147,8 +175,8 @@ class InvisibleReCaptcha
         // PHP 8.5 — pipe operator chaining array operations
         return static::DEBUG_ELEMENTS
             |> fn(array $els) => array_map(
-                fn(string $el) => $this->consoleLog('"Checking element binding of ' . $el . '..."')
-                    . $this->consoleLog($el . '!==undefined'),
+                fn(string $el) => $this->consoleLog('"[reCAPTCHA v3] Binding check: ' . $el . '"')
+                    . $this->consoleLog("typeof {$el}!=='undefined'"),
                 $els,
             )
             |> fn(array $lines) => implode('', $lines);
@@ -161,8 +189,13 @@ class InvisibleReCaptcha
 
     // ─── Verification ─────────────────────────────────────────────────────────
 
-    // PHP 8.5 — #[\NoDiscard] with message: callers must not ignore this
-    #[\NoDiscard('Always check the captcha verification result — ignoring it bypasses protection')]
+    /**
+     * reCAPTCHA v3 verification:
+     *  - success must be true
+     *  - score must be >= scoreThreshold (default 0.5; 1.0 = human, 0.0 = bot)
+     *  - action must match the configured action (prevents token re-use across actions)
+     */
+    #[\NoDiscard('Always check the v3 captcha result — score and action must both pass')]
     public function verifyResponse(string $response, string $clientIp): bool
     {
         if (! $this->options->enabled) {
@@ -176,7 +209,9 @@ class InvisibleReCaptcha
         // PHP 8.5 — pipe operator for verification flow
         return ['secret' => $this->secretKey, 'remoteip' => $clientIp, 'response' => $response]
             |> fn(array $params) => $this->sendVerifyRequest($params)
-            |> fn(array $result)  => ($result['success'] ?? false) === true;
+            |> fn(array $result)  => $result['success'] === true
+                && ($result['score']  ?? 0.0) >= $this->options->scoreThreshold
+                && ($result['action'] ?? '')   === $this->options->action;
     }
 
     #[\NoDiscard]
@@ -197,27 +232,12 @@ class InvisibleReCaptcha
 
     // ─── Getters ──────────────────────────────────────────────────────────────
 
-    public function getSiteKey(): string
-    {
-        return $this->siteKey;
-    }
+    public function getSiteKey(): string   { return $this->siteKey; }
+    public function getSecretKey(): string { return $this->secretKey; }
+    public function getOptions(): CaptchaOptions { return $this->options; }
+    public function getClient(): Client    { return $this->client; }
 
-    public function getSecretKey(): string
-    {
-        return $this->secretKey;
-    }
-
-    public function getOptions(): CaptchaOptions
-    {
-        return $this->options;
-    }
-
-    public function getClient(): Client
-    {
-        return $this->client;
-    }
-
-    // ─── Setters (use PHP 8.5 clone-with internally via CaptchaOptions) ───────
+    // ─── Setters (delegate to CaptchaOptions clone-with) ─────────────────────
 
     public function setOptions(array $options): void
     {
@@ -226,26 +246,27 @@ class InvisibleReCaptcha
 
     public function setOption(string $key, mixed $value): void
     {
-        // Delegate to the immutable CaptchaOptions with* methods (clone with internally)
         $this->options = match ($key) {
-            'enabled'   => $this->options->withEnabled((bool) $value),
-            'hideBadge' => $this->options->withHideBadge((bool) $value),
-            'debug'     => $this->options->withDebug((bool) $value),
-            'timeout'   => $this->options->withTimeout((int) $value),
-            'dataBadge' => $this->options->withBadge(BadgePosition::from((string) $value)),
-            default     => $this->options,
+            'enabled'        => $this->options->withEnabled((bool)   $value),
+            'hideBadge'      => $this->options->withHideBadge((bool)   $value),
+            'debug'          => $this->options->withDebug((bool)   $value),
+            'timeout'        => $this->options->withTimeout((int)    $value),
+            'scoreThreshold' => $this->options->withScoreThreshold((float)  $value),
+            'action'         => $this->options->withAction((string) $value),
+            default          => $this->options,
         };
     }
 
     public function getOption(string $key, mixed $default = null): mixed
     {
         return match ($key) {
-            'enabled'   => $this->options->enabled,
-            'hideBadge' => $this->options->hideBadge,
-            'debug'     => $this->options->debug,
-            'timeout'   => $this->options->timeout,
-            'dataBadge' => $this->options->badge->value,
-            default     => $default,
+            'enabled'        => $this->options->enabled,
+            'hideBadge'      => $this->options->hideBadge,
+            'debug'          => $this->options->debug,
+            'timeout'        => $this->options->timeout,
+            'scoreThreshold' => $this->options->scoreThreshold,
+            'action'         => $this->options->action,
+            default          => $default,
         };
     }
 

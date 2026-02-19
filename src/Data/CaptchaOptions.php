@@ -2,20 +2,19 @@
 
 namespace Oriceon\InvisibleReCaptcha\Data;
 
-use Oriceon\InvisibleReCaptcha\Enums\BadgePosition;
-
 /**
- * Immutable value-object holding all reCAPTCHA configuration.
- * Uses PHP 8.5 readonly class + clone-with syntax.
+ * Immutable value-object holding all reCAPTCHA v3 configuration.
+ * PHP 8.5: readonly class + clone-with syntax.
  */
 readonly class CaptchaOptions
 {
     public function __construct(
-        public bool          $enabled   = true,
-        public bool          $hideBadge = false,
-        public bool          $debug     = false,
-        public int           $timeout   = 5,
-        public BadgePosition $badge     = BadgePosition::BottomRight,
+        public bool   $enabled        = true,
+        public bool   $hideBadge      = false,
+        public bool   $debug          = false,
+        public int    $timeout        = 5,
+        public float  $scoreThreshold = 0.5,
+        public string $action         = 'submit',
     ) {}
 
     // ─── Factory ──────────────────────────────────────────────────────────────
@@ -23,15 +22,16 @@ readonly class CaptchaOptions
     public static function fromArray(array $options): self
     {
         return new self(
-            enabled:   (bool)   ($options['enabled']   ?? true),
-            hideBadge: (bool)   ($options['hideBadge'] ?? false),
-            debug:     (bool)   ($options['debug']     ?? false),
-            timeout:   (int)    ($options['timeout']   ?? 5),
-            badge:     BadgePosition::from($options['dataBadge'] ?? 'bottomright'),
+            enabled:        (bool)   ($options['enabled']        ?? true),
+            hideBadge:      (bool)   ($options['hideBadge']      ?? false),
+            debug:          (bool)   ($options['debug']          ?? false),
+            timeout:        (int)    ($options['timeout']        ?? 5),
+            scoreThreshold: (float)  ($options['scoreThreshold'] ?? 0.5),
+            action:         (string) ($options['action']         ?? 'submit'),
         );
     }
 
-    // ─── PHP 8.5 — clone with ────────────────────────────────────────────────
+    // ─── PHP 8.5 — clone with ─────────────────────────────────────────────────
 
     public function withEnabled(bool $enabled): self
     {
@@ -53,8 +53,13 @@ readonly class CaptchaOptions
         return clone($this, timeout: $timeout);
     }
 
-    public function withBadge(BadgePosition $badge): self
+    public function withScoreThreshold(float $scoreThreshold): self
     {
-        return clone($this, badge: $badge);
+        return clone($this, scoreThreshold: $scoreThreshold);
+    }
+
+    public function withAction(string $action): self
+    {
+        return clone($this, action: $action);
     }
 }

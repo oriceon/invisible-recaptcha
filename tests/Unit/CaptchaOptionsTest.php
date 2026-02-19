@@ -1,45 +1,26 @@
 <?php
 
 use Oriceon\InvisibleReCaptcha\Data\CaptchaOptions;
-use Oriceon\InvisibleReCaptcha\Enums\BadgePosition;
-
-// ─── BadgePosition enum ───────────────────────────────────────────────────────
-
-describe('BadgePosition enum', function () {
-    it('has the correct string values', function () {
-        expect(BadgePosition::BottomRight->value)->toBe('bottomright')
-            ->and(BadgePosition::BottomLeft->value)->toBe('bottomleft')
-            ->and(BadgePosition::Inline->value)->toBe('inline');
-    });
-
-    it('can be created from a string', function () {
-        expect(BadgePosition::from('bottomright'))->toBe(BadgePosition::BottomRight)
-            ->and(BadgePosition::from('bottomleft'))->toBe(BadgePosition::BottomLeft)
-            ->and(BadgePosition::from('inline'))->toBe(BadgePosition::Inline);
-    });
-
-    it('returns null for unknown value via tryFrom', function () {
-        expect(BadgePosition::tryFrom('unknown'))->toBeNull();
-    });
-});
 
 // ─── CaptchaOptions — construction ───────────────────────────────────────────
 
 describe('CaptchaOptions::fromArray', function () {
     it('builds from a full options array', function () {
         $opts = CaptchaOptions::fromArray([
-            'enabled'   => true,
-            'hideBadge' => false,
-            'debug'     => false,
-            'timeout'   => 5,
-            'dataBadge' => 'bottomright',
+            'enabled'        => true,
+            'hideBadge'      => false,
+            'debug'          => false,
+            'timeout'        => 5,
+            'scoreThreshold' => 0.5,
+            'action'         => 'submit',
         ]);
 
         expect($opts->enabled)->toBeTrue()
             ->and($opts->hideBadge)->toBeFalse()
             ->and($opts->debug)->toBeFalse()
             ->and($opts->timeout)->toBe(5)
-            ->and($opts->badge)->toBe(BadgePosition::BottomRight);
+            ->and($opts->scoreThreshold)->toBe(0.5)
+            ->and($opts->action)->toBe('submit');
     });
 
     it('uses defaults for missing keys', function () {
@@ -49,31 +30,33 @@ describe('CaptchaOptions::fromArray', function () {
             ->and($opts->hideBadge)->toBeFalse()
             ->and($opts->debug)->toBeFalse()
             ->and($opts->timeout)->toBe(5)
-            ->and($opts->badge)->toBe(BadgePosition::BottomRight);
+            ->and($opts->scoreThreshold)->toBe(0.5)
+            ->and($opts->action)->toBe('submit');
     });
 
     it('casts timeout to int', function () {
-        $opts = CaptchaOptions::fromArray(['timeout' => '10']);
-
-        expect($opts->timeout)->toBe(10)->toBeInt();
+        expect(CaptchaOptions::fromArray(['timeout' => '10'])->timeout)->toBe(10)->toBeInt();
     });
 
-    it('maps dataBadge string to BadgePosition enum', function () {
-        expect(CaptchaOptions::fromArray(['dataBadge' => 'inline'])->badge)
-            ->toBe(BadgePosition::Inline);
+    it('casts scoreThreshold to float', function () {
+        expect(CaptchaOptions::fromArray(['scoreThreshold' => '0.7'])->scoreThreshold)->toBe(0.7)->toBeFloat();
+    });
+
+    it('stores a custom action', function () {
+        expect(CaptchaOptions::fromArray(['action' => 'login'])->action)->toBe('login');
     });
 });
 
 // ─── CaptchaOptions — PHP 8.5 clone with ─────────────────────────────────────
 
 describe('CaptchaOptions clone-with methods', function () {
-    it('withEnabled returns a new instance with updated enabled', function () {
+    it('withEnabled returns a new instance, leaving original unchanged', function () {
         $original = CaptchaOptions::fromArray([]);
         $updated  = $original->withEnabled(false);
 
         expect($updated->enabled)->toBeFalse()
-            ->and($original->enabled)->toBeTrue()    // original is unchanged
-            ->and($updated)->not->toBe($original);   // different instance
+            ->and($original->enabled)->toBeTrue()
+            ->and($updated)->not->toBe($original);
     });
 
     it('withHideBadge returns a new instance', function () {
@@ -100,22 +83,32 @@ describe('CaptchaOptions clone-with methods', function () {
             ->and($original->timeout)->toBe(5);
     });
 
-    it('withBadge returns a new instance with the given BadgePosition', function () {
+    it('withScoreThreshold returns a new instance', function () {
         $original = CaptchaOptions::fromArray([]);
-        $updated  = $original->withBadge(BadgePosition::Inline);
+        $updated  = $original->withScoreThreshold(0.8);
 
-        expect($updated->badge)->toBe(BadgePosition::Inline)
-            ->and($original->badge)->toBe(BadgePosition::BottomRight);
+        expect($updated->scoreThreshold)->toBe(0.8)
+            ->and($original->scoreThreshold)->toBe(0.5);
     });
 
-    it('chaining with* calls produces a new immutable instance each time', function () {
+    it('withAction returns a new instance', function () {
+        $original = CaptchaOptions::fromArray([]);
+        $updated  = $original->withAction('login');
+
+        expect($updated->action)->toBe('login')
+            ->and($original->action)->toBe('submit');
+    });
+
+    it('chaining with* calls produces immutable instances each time', function () {
         $opts = CaptchaOptions::fromArray([])
             ->withEnabled(false)
-            ->withTimeout(15)
-            ->withBadge(BadgePosition::BottomLeft);
+            ->withScoreThreshold(0.9)
+            ->withAction('signup')
+            ->withTimeout(10);
 
         expect($opts->enabled)->toBeFalse()
-            ->and($opts->timeout)->toBe(15)
-            ->and($opts->badge)->toBe(BadgePosition::BottomLeft);
+            ->and($opts->scoreThreshold)->toBe(0.9)
+            ->and($opts->action)->toBe('signup')
+            ->and($opts->timeout)->toBe(10);
     });
 });
