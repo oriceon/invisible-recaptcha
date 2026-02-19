@@ -1,122 +1,433 @@
-Invisible reCAPTCHA
-==========
-![php-badge](https://img.shields.io/badge/php-%3E%3D%205.6-8892BF.svg)
-[![packagist-badge](https://img.shields.io/packagist/v/oriceon/invisible-recaptcha.svg)](https://packagist.org/packages/oriceon/invisible-recaptcha)
-[![Total Downloads](https://poser.pugx.org/oriceon/invisible-recaptcha/downloads)](https://packagist.org/packages/oriceon/invisible-recaptcha)
-[![travis-badge](https://api.travis-ci.org/oriceon/invisible-recaptcha.svg?branch=master)](https://travis-ci.org/oriceon/invisible-recaptcha)
+# Invisible reCAPTCHA for Laravel
 
-![invisible_recaptcha_demo](http://i.imgur.com/1dZ9XKn.png)
+[![Packagist Version](https://img.shields.io/packagist/v/oriceon/invisible-recaptcha.svg)](https://packagist.org/packages/oriceon/invisible-recaptcha)
+[![Total Downloads](https://img.shields.io/packagist/dt/oriceon/invisible-recaptcha.svg)](https://packagist.org/packages/oriceon/invisible-recaptcha)
+[![PHP](https://img.shields.io/badge/php-%5E8.5-8892BF.svg)](https://www.php.net)
+[![Laravel](https://img.shields.io/badge/laravel-%5E12.0-FF2D20.svg)](https://laravel.com)
+[![License](https://img.shields.io/packagist/l/oriceon/invisible-recaptcha.svg)](LICENSE.md)
 
-## Why Invisible reCAPTCHA?
+Google Invisible reCAPTCHA v2 integration for **Laravel 12** built with **PHP 8.5**.
 
-Invisible reCAPTCHA is an improved version of reCAPTCHA v2(no captcha).
-In reCAPTCHA v2, users need to click the button: "I'm not a robot" to prove they are human. In invisible reCAPTCHA, there will be not embed a captcha box for users to click. It's totally invisible! Only the badge will show on the buttom of the page to hint users that your website is using this technology. (The badge could be hidden, but not suggested.)
+> **Invisible reCAPTCHA** works silently in the background — no "I'm not a robot" checkbox needed. Only a small badge appears at the bottom of the page to indicate protection.
+
+---
+
+## Requirements
+
+| Dependency | Version |
+|---|---|
+| PHP | `^8.5` |
+| Laravel | `^12.0` |
+| Guzzle | `^7.9` |
+
+---
 
 ## Installation
 
-```
+```bash
 composer require oriceon/invisible-recaptcha
 ```
 
-### Configuration
-Before you set your config, remember to choose `invisible reCAPTCHA` while applying for keys.
-![invisible_recaptcha_setting](http://i.imgur.com/zIAlKbY.jpg)
+Laravel auto-discovers the service provider via package discovery. No manual registration needed.
 
-Add `INVISIBLE_RECAPTCHA_SITEKEY`, `INVISIBLE_RECAPTCHA_SECRETKEY` to **.env** file.
+---
 
+## Configuration
+
+### 1. Publish the config file
+
+```bash
+php artisan vendor:publish --provider="Oriceon\InvisibleReCaptcha\InvisibleReCaptchaServiceProvider"
 ```
-// required
-INVISIBLE_RECAPTCHA_SITEKEY={siteKey}
-INVISIBLE_RECAPTCHA_SECRETKEY={secretKey}
 
-// optional
+This publishes `config/captcha.php` to your application.
+
+### 2. Add keys to `.env`
+
+Go to [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin) and create an **Invisible reCAPTCHA v2** key pair, then add them to your `.env`:
+
+```env
+# Required
+INVISIBLE_RECAPTCHA_SITEKEY=your_site_key_here
+INVISIBLE_RECAPTCHA_SECRETKEY=your_secret_key_here
+
+# Optional (defaults shown)
 INVISIBLE_RECAPTCHA_BADGEHIDE=false
-INVISIBLE_RECAPTCHA_DATABADGE='bottomright'
+INVISIBLE_RECAPTCHA_DATABADGE=bottomright
 INVISIBLE_RECAPTCHA_TIMEOUT=5
 INVISIBLE_RECAPTCHA_DEBUG=false
 INVISIBLE_RECAPTCHA_ENABLED=true
 ```
 
-> There are three different captcha styles you can set: `bottomright`, `bottomleft`, `inline`
+### 3. Config reference (`config/captcha.php`)
 
-> If you set `INVISIBLE_RECAPTCHA_BADGEHIDE` to true, you can hide the badge logo.
+```php
+return [
+    'siteKey'   => env('INVISIBLE_RECAPTCHA_SITEKEY'),
+    'secretKey' => env('INVISIBLE_RECAPTCHA_SECRETKEY'),
 
-> You can see the binding status of those catcha elements on browser console by setting `INVISIBLE_RECAPTCHA_DEBUG` as true.
+    'options' => [
+        // Hide the reCAPTCHA badge (not recommended by Google)
+        'hideBadge' => env('INVISIBLE_RECAPTCHA_BADGEHIDE', false),
 
-### Usage
+        // Badge position: 'bottomright' | 'bottomleft' | 'inline'
+        'dataBadge' => env('INVISIBLE_RECAPTCHA_DATABADGE', 'bottomright'),
 
-Before you render the captcha, please keep those notices in mind:
+        // Guzzle HTTP timeout in seconds
+        'timeout'   => env('INVISIBLE_RECAPTCHA_TIMEOUT', 5),
 
-* `render()` or `renderHTML()` function needs to be called within a form element.
-* You have to ensure the `type` attribute of your submit button has to be `submit`.
-* There can only be one submit button in your form.
+        // Show binding debug info in the browser console
+        'debug'     => env('INVISIBLE_RECAPTCHA_DEBUG', false),
 
-##### Display reCAPTCHA in Your View
+        // Set false to bypass captcha entirely (useful in testing)
+        'enabled'   => env('INVISIBLE_RECAPTCHA_ENABLED', true),
+    ],
+];
+```
+
+---
+
+## Usage
+
+### Important rules
+
+- The captcha **must be inside a `<form>` element**.
+- The form must have **exactly one** `<button type="submit">` or `<input type="submit">`.
+- The submit button **must** have `type="submit"`.
+
+---
+
+### All-in-one render (recommended)
+
+Renders the polyfill script, the reCAPTCHA HTML, and the footer JS in one call.
+
+```blade
+<form method="POST" action="/contact">
+    @csrf
+
+    {{-- your form fields --}}
+
+    <button type="submit">Send</button>
+
+    @captcha
+</form>
+```
+
+Or with a language and a CSP nonce:
+
+```blade
+@captcha('ro', 'your-csp-nonce')
+```
+
+Using the service directly:
 
 ```php
 {!! app('captcha')->render() !!}
-
-// or you can use this in blade
-@captcha
+{!! app('captcha')->render('ro') !!}
+{!! app('captcha')->render('ro', $nonce) !!}
 ```
 
-With custom language support:
+---
 
-```php
-{!! app('captcha')->render('en') !!}
+### Render in separate parts (Vue / React / SPA)
 
-// or you can use this in blade
-@captcha('en')
-```
+When using a JS framework that does not allow `<script>` tags inside component templates, render each part independently.
 
-##### Usage with Javascript frameworks like VueJS:
+#### Polyfill — place in `<head>`
 
-The `render()` process includes three distinct sections that can be rendered separately incase you're using the package with a framework like VueJS which throws console errors when `<script>` tags are included in templates.
-
-You can render the polyfill (do this somewhere like the head of your HTML:)
-
-```php
-{!! app('captcha')->renderPolyfill() !!}
-
-// Or with blade directive:
+```blade
 @captchaPolyfill
 ```
 
-You can render the HTML using this following, this needs to be INSIDE your `<form>` tag:
-
 ```php
-{!! app('captcha')->renderCaptchaHTML() !!}
+{!! app('captcha')->renderPolyfill() !!}
+```
 
-// Or with blade directive:
+#### HTML widget — place inside `<form>`
+
+```blade
 @captchaHTML
 ```
 
-And you can render the neccessary `<script>` tags including the optional language support by using:
-
 ```php
-// The argument is optional.
-{!! app('captcha')->renderFooterJS('en') !!}
+{!! app('captcha')->renderCaptchaHTML() !!}
+```
 
-// Or with blade directive:
+#### Footer scripts — place before `</body>`
+
+```blade
 @captchaScripts
-
-// blade directive, with language support:
-@captchaScripts('en')
+@captchaScripts('ro')
+@captchaScripts('ro', $nonce)
 ```
-
-##### Validation
-
-Add `'g-recaptcha-response' => 'required|captcha'` to rules array.
 
 ```php
-$validate = Validator::make(Input::all(), [
-    'g-recaptcha-response' => 'required|captcha'
-]);
-
+{!! app('captcha')->renderFooterJS() !!}
+{!! app('captcha')->renderFooterJS('ro') !!}
+{!! app('captcha')->renderFooterJS('ro', $nonce) !!}
 ```
 
-## Credits 
+---
 
-* anhskohbo (the author of no-captcha package)
-* albertcht (the author of fworked no-captcha package)
-* [Contributors](https://github.com/oriceon/invisible-recaptcha/graphs/contributors)
+### Full Blade template example
+
+```blade
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <title>Contact</title>
+
+    @captchaPolyfill
+</head>
+<body>
+
+<form method="POST" action="/contact">
+    @csrf
+
+    <input type="text" name="name" placeholder="Nume">
+    <input type="email" name="email" placeholder="Email">
+    <textarea name="message"></textarea>
+
+    @captchaHTML
+
+    <button type="submit">Trimite</button>
+</form>
+
+@captchaScripts('ro')
+
+</body>
+</html>
+```
+
+---
+
+### Validation
+
+Add the `captcha` rule to your validation array. The rule automatically verifies the `g-recaptcha-response` token against Google's API.
+
+```php
+// In a FormRequest:
+public function rules(): array
+{
+    return [
+        'name'                 => 'required|string|max:255',
+        'email'                => 'required|email',
+        'g-recaptcha-response' => 'required|captcha',
+    ];
+}
+```
+
+```php
+// Or inline in a controller:
+$request->validate([
+    'g-recaptcha-response' => 'required|captcha',
+]);
+```
+
+Custom error message in `lang/ro/validation.php`:
+
+```php
+'captcha' => 'Verificarea reCAPTCHA a eșuat. Încearcă din nou.',
+```
+
+---
+
+### Manual verification
+
+If you need to verify the captcha response manually (e.g. in an API endpoint):
+
+```php
+use Oriceon\InvisibleReCaptcha\InvisibleReCaptcha;
+
+class ContactController extends Controller
+{
+    public function store(Request $request, InvisibleReCaptcha $captcha): RedirectResponse
+    {
+        // From a Symfony / Laravel Request object
+        if (! $captcha->verifyRequest($request)) {
+            abort(422, 'reCAPTCHA verification failed.');
+        }
+
+        // Or manually with token + IP
+        $passed = $captcha->verifyResponse(
+            $request->input('g-recaptcha-response'),
+            $request->ip(),
+        );
+    }
+}
+```
+
+---
+
+### Custom JS hooks
+
+The package exposes two JavaScript hooks you can define **before** the captcha loads:
+
+```javascript
+// Called before form submission — return false to cancel execution
+function _beforeSubmit(event) {
+    // validate something, return true to proceed or false to stop
+    return true;
+}
+
+// Called after Google confirms the token and right before form.submit()
+function _submitEvent() {
+    console.log('Form is being submitted!');
+}
+```
+
+---
+
+## Architecture (PHP 8.5)
+
+This package is built exclusively with PHP 8.5 features.
+
+### `Enums/BadgePosition`
+
+```php
+enum BadgePosition: string
+{
+    case BottomRight = 'bottomright';
+    case BottomLeft  = 'bottomleft';
+    case Inline      = 'inline';
+}
+```
+
+### `Data/CaptchaOptions` — `readonly class` + `clone with`
+
+```php
+readonly class CaptchaOptions
+{
+    public function __construct(
+        public bool          $enabled   = true,
+        public bool          $hideBadge = false,
+        public bool          $debug     = false,
+        public int           $timeout   = 5,
+        public BadgePosition $badge     = BadgePosition::BottomRight,
+    ) {}
+
+    // PHP 8.5 — clone with
+    public function withBadge(BadgePosition $badge): self
+    {
+        return clone($this, badge: $badge);
+    }
+}
+```
+
+### `InvisibleReCaptcha` — pipe operator + `#[\NoDiscard]`
+
+```php
+// PHP 8.5 — pipe operator |>
+public function render(?string $lang = null, ?string $nonce = null): ?string
+{
+    return [$this->renderPolyfill(), $this->renderCaptchaHTML(), $this->renderFooterJS($lang, $nonce)]
+        |> fn(array $parts) => array_filter($parts)
+        |> fn(array $parts) => implode('', $parts);
+}
+
+// PHP 8.5 — #[\NoDiscard] prevents silent ignore of return value
+#[\NoDiscard('Always check the captcha verification result')]
+public function verifyResponse(string $response, string $clientIp): bool { ... }
+```
+
+| PHP 8.5 Feature | Used in |
+|---|---|
+| Pipe operator `\|>` | `render()`, `renderDebug()`, `verifyResponse()` |
+| `readonly class` | `CaptchaOptions` |
+| `clone($this, prop: val)` | `CaptchaOptions::with*()` |
+| `#[\NoDiscard]` / `#[\NoDiscard('msg')]` | All render & verify methods |
+| `array_first()` / `array_last()` | `renderCaptchaHTML()` |
+| `enum` (backed) | `BadgePosition` |
+| Typed class constants `const string` | `InvisibleReCaptcha` |
+| Constructor property promotion + `readonly` | `InvisibleReCaptcha` |
+| Named arguments | `verifyRequest()`, `sendVerifyRequest()` |
+| `match` expression | `setOption()`, `getOption()` |
+
+---
+
+## Testing
+
+This package uses **[Pest v3](https://pestphp.com)**.
+
+```bash
+composer install
+./vendor/bin/pest
+```
+
+Test suites:
+
+| File | Coverage |
+|---|---|
+| `tests/Unit/CaptchaOptionsTest.php` | `BadgePosition` enum, `CaptchaOptions::fromArray()`, all `with*` clone-with methods |
+| `tests/Unit/InvisibleReCaptchaTest.php` | Constructor, options, all render methods, verify methods (with Guzzle mock) |
+| `tests/Unit/BladeDirectiveTest.php` | All 4 Blade directives: `@captcha`, `@captchaPolyfill`, `@captchaHTML`, `@captchaScripts` |
+
+---
+
+## Blade Directives Reference
+
+| Directive | Equivalent |
+|---|---|
+| `@captcha` | `app('captcha')->renderCaptcha()` |
+| `@captcha('en')` | `app('captcha')->renderCaptcha('en')` |
+| `@captcha('en', $nonce)` | `app('captcha')->renderCaptcha('en', $nonce)` |
+| `@captchaPolyfill` | `app('captcha')->renderPolyfill()` |
+| `@captchaHTML` | `app('captcha')->renderCaptchaHTML()` |
+| `@captchaScripts` | `app('captcha')->renderFooterJS()` |
+| `@captchaScripts('en')` | `app('captcha')->renderFooterJS('en')` |
+| `@captchaScripts('en', $nonce)` | `app('captcha')->renderFooterJS('en', $nonce)` |
+
+---
+
+## Environment Variables Reference
+
+| Variable | Default | Description |
+|---|---|---|
+| `INVISIBLE_RECAPTCHA_SITEKEY` | — | Google reCAPTCHA site key (**required**) |
+| `INVISIBLE_RECAPTCHA_SECRETKEY` | — | Google reCAPTCHA secret key (**required**) |
+| `INVISIBLE_RECAPTCHA_BADGEHIDE` | `false` | Hide the reCAPTCHA badge (not recommended) |
+| `INVISIBLE_RECAPTCHA_DATABADGE` | `bottomright` | Badge position: `bottomright` \| `bottomleft` \| `inline` |
+| `INVISIBLE_RECAPTCHA_TIMEOUT` | `5` | Guzzle HTTP timeout in seconds |
+| `INVISIBLE_RECAPTCHA_DEBUG` | `false` | Log element binding status to browser console |
+| `INVISIBLE_RECAPTCHA_ENABLED` | `true` | Set `false` to disable captcha (useful in tests) |
+
+---
+
+## Disabling in Tests
+
+Set `INVISIBLE_RECAPTCHA_ENABLED=false` in your `.env.testing` to skip verification entirely during tests — `verifyResponse()` will return `true` automatically.
+
+```env
+# .env.testing
+INVISIBLE_RECAPTCHA_ENABLED=false
+```
+
+---
+
+## Changelog
+
+### v3.0.0
+- **PHP 8.5 minimum** — pipe operator `|>`, `#[\NoDiscard]`, `array_first()` / `array_last()`, `clone with`
+- **Laravel 12 only** — dropped support for Laravel 10 and 11
+- New `BadgePosition` backed enum replaces raw strings
+- New `CaptchaOptions` immutable `readonly` value-object with `clone with` wither methods
+- Replaced PHPUnit with **Pest v3** + `pest-plugin-arch`
+- `getOptions()` now returns a `CaptchaOptions` instance instead of a raw array
+- All public render/verify methods annotated with `#[\NoDiscard]`
+- Namespace corrected to `Oriceon\InvisibleReCaptcha`
+
+---
+
+## Credits
+
+- [anhskohbo](https://github.com/anhskohbo) — original `no-captcha` package
+- [albertcht](https://github.com/albertcht) — forked `invisible-recaptcha` package
+- [Valentin Ivașcu](https://www.valentinivascu.ro)
+- [Contributors](https://github.com/oriceon/invisible-recaptcha/graphs/contributors)
+
+---
+
+## License
+
+MIT — see [LICENSE.md](LICENSE.md).
