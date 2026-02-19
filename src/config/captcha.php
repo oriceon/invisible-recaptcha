@@ -1,28 +1,34 @@
 <?php
 
 return [
-    // your recapthca site key.
+    // Your reCAPTCHA v3 site key (public key)
     'siteKey' => env('INVISIBLE_RECAPTCHA_SITEKEY'),
 
-    // your recapthca secret key.
+    // Your reCAPTCHA v3 secret key (private key)
     'secretKey' => env('INVISIBLE_RECAPTCHA_SECRETKEY'),
 
-    // other options to customize your configs
     'options' => [
-        // set true if you want to hide your recaptcha badge
+        // Hide the reCAPTCHA badge (.grecaptcha-badge).
+        // Uses visibility:hidden (not display:none) per Google ToS.
+        // If hidden, you must show "Protected by reCAPTCHA" text elsewhere.
         'hideBadge' => env('INVISIBLE_RECAPTCHA_BADGEHIDE', false),
 
-        // optional, reposition the reCAPTCHA badge. 'inline' allows you to control the CSS.
-        // available values: bottomright, bottomleft, inline
-        'dataBadge' => env('INVISIBLE_RECAPTCHA_DATABADGE', 'bottomright'),
+        // Minimum score to accept (0.0 = bot, 1.0 = human).
+        // Google recommends starting at 0.5 and adjusting based on your traffic.
+        'scoreThreshold' => env('INVISIBLE_RECAPTCHA_SCORE', 0.5),
 
-        // timeout value for guzzle client
+        // Action name passed to grecaptcha.execute(key, {action}).
+        // Used to scope tokens — verified server-side to prevent token re-use.
+        // Use distinct values per form: 'submit', 'login', 'signup', 'contact', etc.
+        'action' => env('INVISIBLE_RECAPTCHA_ACTION', 'submit'),
+
+        // Guzzle HTTP timeout in seconds for the verify API call
         'timeout' => env('INVISIBLE_RECAPTCHA_TIMEOUT', 5),
 
-        // set true to show binding status on your javascript console
+        // Log reCAPTCHA binding status to the browser console
         'debug' => env('INVISIBLE_RECAPTCHA_DEBUG', false),
 
-        // set false to disable recaptcha
-        'enabled' => env('INVISIBLE_RECAPTCHA_ENABLED', true)
-    ]
+        // Set false to bypass captcha completely (useful in automated tests)
+        'enabled' => env('INVISIBLE_RECAPTCHA_ENABLED', true),
+    ],
 ];
