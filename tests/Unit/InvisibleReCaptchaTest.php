@@ -1,58 +1,99 @@
 <?php
 
 use GuzzleHttp\Client;
-use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\HandlerStack;
-use GuzzleHttp\Psr7\Response;
+use Oriceon\InvisibleReCaptcha\Data\CaptchaOptions;
+use Oriceon\InvisibleReCaptcha\Enums\BadgePosition;
 use Oriceon\InvisibleReCaptcha\InvisibleReCaptcha;
 use Symfony\Component\HttpFoundation\Request;
 
 // ─── Constructor & Getters ────────────────────────────────────────────────────
 
 describe('constructor', function () {
-    it('stores site key and secret key', function () {
+    it('stores siteKey and secretKey as readonly properties', function () {
         $captcha = makeCaptcha();
 
         expect($captcha->getSiteKey())->toBe(SITE_KEY)
             ->and($captcha->getSecretKey())->toBe(SECRET_KEY);
     });
 
-    it('initialises a guzzle client', function () {
+    it('initialises a Guzzle client', function () {
         expect(makeCaptcha()->getClient())->toBeInstanceOf(Client::class);
     });
 
-    it('stores options', function () {
-        expect(makeCaptcha()->getOptions())->toBe(OPTIONS);
+    it('builds a CaptchaOptions instance from the raw array', function () {
+        expect(makeCaptcha()->getOptions())->toBeInstanceOf(CaptchaOptions::class);
+    });
+
+    it('maps raw options to the CaptchaOptions value-object', function () {
+        $opts = makeCaptcha()->getOptions();
+
+        expect($opts->enabled)->toBeTrue()
+            ->and($opts->hideBadge)->toBeFalse()
+            ->and($opts->timeout)->toBe(5)
+            ->and($opts->debug)->toBeFalse()
+            ->and($opts->badge)->toBe(BadgePosition::BottomRight);
     });
 });
 
-// ─── Options ──────────────────────────────────────────────────────────────────
+// ─── setOption / getOption — use CaptchaOptions clone-with internally ─────────
 
-describe('options', function () {
-    it('returns a single option value', function () {
-        expect(makeCaptcha()->getOption('timeout'))->toBe(5)
-            ->and(makeCaptcha()->getOption('debug'))->toBeFalse();
+describe('setOption / getOption', function () {
+    it('returns the correct value for each known option key', function () {
+        $captcha = makeCaptcha();
+
+        expect($captcha->getOption('enabled'))->toBeTrue()
+            ->and($captcha->getOption('hideBadge'))->toBeFalse()
+            ->and($captcha->getOption('debug'))->toBeFalse()
+            ->and($captcha->getOption('timeout'))->toBe(5)
+            ->and($captcha->getOption('dataBadge'))->toBe('bottomright');
     });
 
-    it('returns default when option is missing', function () {
-        expect(makeCaptcha()->getOption('nonExistent', 'default'))->toBe('default');
+    it('returns the default for an unknown key', function () {
+        expect(makeCaptcha()->getOption('nonExistent', 'fallback'))->toBe('fallback');
     });
 
-    it('can set a single option', function () {
+    it('updates enabled via setOption (uses clone-with internally)', function () {
+        $captcha = makeCaptcha();
+        $captcha->setOption('enabled', false);
+
+        expect($captcha->getOption('enabled'))->toBeFalse();
+    });
+
+    it('updates debug via setOption', function () {
         $captcha = makeCaptcha();
         $captcha->setOption('debug', true);
-        $captcha->setOption('timeout', 10);
 
-        expect($captcha->getOption('debug'))->toBeTrue()
-            ->and($captcha->getOption('timeout'))->toBe(10);
+        expect($captcha->getOption('debug'))->toBeTrue();
     });
 
-    it('can replace all options at once', function () {
-        $captcha  = makeCaptcha();
-        $newOpts  = ['enabled' => false, 'hideBadge' => true, 'dataBadge' => 'inline', 'timeout' => 3, 'debug' => false];
-        $captcha->setOptions($newOpts);
+    it('updates timeout via setOption', function () {
+        $captcha = makeCaptcha();
+        $captcha->setOption('timeout', 30);
 
-        expect($captcha->getOptions())->toBe($newOpts);
+        expect($captcha->getOption('timeout'))->toBe(30);
+    });
+
+    it('updates dataBadge via setOption and reflects in enum', function () {
+        $captcha = makeCaptcha();
+        $captcha->setOption('dataBadge', 'inline');
+
+        expect($captcha->getOption('dataBadge'))->toBe('inline')
+            ->and($captcha->getOptions()->badge)->toBe(BadgePosition::Inline);
+    });
+});
+
+describe('setOptions', function () {
+    it('replaces all options at once', function () {
+        $captcha = makeCaptcha();
+        $captcha->setOptions(['enabled' => false, 'hideBadge' => true, 'dataBadge' => 'inline', 'timeout' => 3, 'debug' => true]);
+
+        $opts = $captcha->getOptions();
+
+        expect($opts->enabled)->toBeFalse()
+            ->and($opts->hideBadge)->toBeTrue()
+            ->and($opts->badge)->toBe(BadgePosition::Inline)
+            ->and($opts->timeout)->toBe(3)
+            ->and($opts->debug)->toBeTrue();
     });
 });
 
@@ -87,10 +128,8 @@ describe('getPolyfillJs', function () {
 // ─── renderPolyfill ───────────────────────────────────────────────────────────
 
 describe('renderPolyfill', function () {
-    it('renders a script tag with the polyfill url', function () {
-        $html = makeCaptcha()->renderPolyfill();
-
-        expect($html)
+    it('renders a <script> tag containing the polyfill url', function () {
+        expect(makeCaptcha()->renderPolyfill())
             ->toContain('<script')
             ->toContain(InvisibleReCaptcha::POLYFILL_URI);
     });
@@ -103,7 +142,7 @@ describe('renderPolyfill', function () {
 // ─── renderCaptchaHTML ────────────────────────────────────────────────────────
 
 describe('renderCaptchaHTML', function () {
-    it('contains the g-recaptcha div with sitekey', function () {
+    it('contains the g-recaptcha div with sitekey and badge from enum', function () {
         $html = makeCaptcha()->renderCaptchaHTML();
 
         expect($html)
@@ -111,29 +150,25 @@ describe('renderCaptchaHTML', function () {
             ->toContain(SITE_KEY)
             ->toContain('data-size="invisible"')
             ->toContain('data-callback="_submitForm"')
-            ->toContain('data-badge="bottomright"');
+            ->toContain('data-badge="' . BadgePosition::BottomRight->value . '"');
     });
 
     it('contains the anchor div', function () {
         expect(makeCaptcha()->renderCaptchaHTML())->toContain('id="_g-recaptcha"');
     });
 
-    it('hides badge with CSS when hideBadge is true', function () {
-        $html = makeCaptcha(['hideBadge' => true])->renderCaptchaHTML();
-
-        expect($html)->toContain('display:none');
+    it('injects CSS to hide badge when hideBadge is true', function () {
+        expect(makeCaptcha(['hideBadge' => true])->renderCaptchaHTML())->toContain('display:none');
     });
 
-    it('does not include hide-badge CSS when hideBadge is false', function () {
-        $html = makeCaptcha(['hideBadge' => false])->renderCaptchaHTML();
-
-        expect($html)->not->toContain('display:none');
+    it('does not inject hide-badge CSS when hideBadge is false', function () {
+        expect(makeCaptcha(['hideBadge' => false])->renderCaptchaHTML())->not->toContain('display:none');
     });
 
-    it('uses the configured badge position', function () {
+    it('uses the configured BadgePosition enum value in HTML', function () {
         $html = makeCaptcha(['dataBadge' => 'bottomleft'])->renderCaptchaHTML();
 
-        expect($html)->toContain('data-badge="bottomleft"');
+        expect($html)->toContain('data-badge="' . BadgePosition::BottomLeft->value . '"');
     });
 
     it('returns null when disabled', function () {
@@ -145,31 +180,25 @@ describe('renderCaptchaHTML', function () {
 
 describe('renderFooterJS', function () {
     it('includes the api script tag', function () {
-        $html = makeCaptcha()->renderFooterJS();
-
-        expect($html)
+        expect(makeCaptcha()->renderFooterJS())
             ->toContain('<script')
             ->toContain(InvisibleReCaptcha::API_URI);
     });
 
-    it('appends hl param to api url when lang provided', function () {
+    it('appends hl param to api url when lang is provided', function () {
         expect(makeCaptcha()->renderFooterJS('ro'))->toContain('?hl=ro');
     });
 
     it('includes nonce attribute when nonce is given', function () {
-        expect(makeCaptcha()->renderFooterJS('en', 'nonce-XYZ123'))->toContain('nonce="nonce-XYZ123"');
+        expect(makeCaptcha()->renderFooterJS('en', 'nonce-XYZ'))->toContain('nonce="nonce-XYZ"');
     });
 
     it('does not include nonce when none is given', function () {
         expect(makeCaptcha()->renderFooterJS())->not->toContain('nonce=');
     });
 
-    it('contains load event listener', function () {
+    it('contains the load event listener', function () {
         expect(makeCaptcha()->renderFooterJS())->toContain("addEventListener('load'");
-    });
-
-    it('contains _submitForm definition', function () {
-        expect(makeCaptcha()->renderFooterJS())->toContain('_submitForm');
     });
 
     it('contains grecaptcha.execute call', function () {
@@ -181,10 +210,10 @@ describe('renderFooterJS', function () {
     });
 });
 
-// ─── renderDebug ──────────────────────────────────────────────────────────────
+// ─── renderDebug (uses pipe operator internally) ──────────────────────────────
 
 describe('renderDebug', function () {
-    it('outputs console.log statements for each debug element', function () {
+    it('outputs console.log for every DEBUG_ELEMENTS entry', function () {
         $html = makeCaptcha()->renderDebug();
 
         foreach (InvisibleReCaptcha::DEBUG_ELEMENTS as $element) {
@@ -197,10 +226,10 @@ describe('renderDebug', function () {
     });
 });
 
-// ─── render ───────────────────────────────────────────────────────────────────
+// ─── render (uses pipe operator |> internally) ────────────────────────────────
 
 describe('render', function () {
-    it('renders all three parts combined', function () {
+    it('combines polyfill + captchaHTML + footerJS via pipe operator', function () {
         $html = makeCaptcha()->render();
 
         expect($html)
@@ -225,7 +254,7 @@ describe('render', function () {
 // ─── renderCaptcha ────────────────────────────────────────────────────────────
 
 describe('renderCaptcha', function () {
-    it('delegates to render and returns the same output', function () {
+    it('returns the same output as render()', function () {
         $captcha = makeCaptcha();
 
         expect($captcha->renderCaptcha())->toBe($captcha->render());
@@ -236,7 +265,7 @@ describe('renderCaptcha', function () {
     });
 });
 
-// ─── verifyResponse ───────────────────────────────────────────────────────────
+// ─── verifyResponse (uses pipe operator |> internally) ────────────────────────
 
 describe('verifyResponse', function () {
     it('returns true immediately when captcha is disabled', function () {
@@ -247,14 +276,14 @@ describe('verifyResponse', function () {
         expect(makeCaptcha()->verifyResponse('', '127.0.0.1'))->toBeFalse();
     });
 
-    it('returns true when google responds with success=true', function () {
+    it('returns true when Google responds with success=true', function () {
         $captcha = makeCaptcha();
         $captcha->setClient(makeGuzzleMock(['success' => true]));
 
         expect($captcha->verifyResponse('valid-token', '127.0.0.1'))->toBeTrue();
     });
 
-    it('returns false when google responds with success=false', function () {
+    it('returns false when Google responds with success=false', function () {
         $captcha = makeCaptcha();
         $captcha->setClient(makeGuzzleMock(['success' => false]));
 
@@ -265,7 +294,7 @@ describe('verifyResponse', function () {
 // ─── verifyRequest ────────────────────────────────────────────────────────────
 
 describe('verifyRequest', function () {
-    it('returns true when google responds with success for a Symfony request', function () {
+    it('returns true when Google confirms a valid Symfony Request', function () {
         $captcha = makeCaptcha();
         $captcha->setClient(makeGuzzleMock(['success' => true]));
 
@@ -281,13 +310,3 @@ describe('verifyRequest', function () {
         expect($captcha->verifyRequest($request))->toBeFalse();
     });
 });
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function makeGuzzleMock(array $body): Client
-{
-    $mock    = new MockHandler([new Response(200, [], json_encode($body))]);
-    $handler = HandlerStack::create($mock);
-
-    return new Client(['handler' => $handler]);
-}

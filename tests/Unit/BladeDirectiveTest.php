@@ -5,27 +5,21 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\View\Compilers\BladeCompiler;
 use Oriceon\InvisibleReCaptcha\InvisibleReCaptchaServiceProvider;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helper ───────────────────────────────────────────────────────────────────
 
 function makeBlade(): BladeCompiler
 {
-    $captcha = makeCaptcha();
-
     $app = Container::getInstance();
-    $app->instance('captcha', $captcha);
+    $app->instance('captcha', makeCaptcha());
 
-    $blade = new BladeCompiler(
-        (new \Mockery\Generator\MockConfiguration)->getMocks() ? null
-            : (new class extends Filesystem {}),
-        sys_get_temp_dir(),
-    );
-
+    $blade    = new BladeCompiler(new Filesystem(), sys_get_temp_dir());
     $provider = new InvisibleReCaptchaServiceProvider($app);
     $provider->addBladeDirective($blade);
 
     return $blade;
 }
 
+// Singleton so all tests in this file share one compiled instance
 function blade(): BladeCompiler
 {
     static $instance = null;
